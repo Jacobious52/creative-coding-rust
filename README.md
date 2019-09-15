@@ -1,6 +1,6 @@
 # Create Coding in Rust
 
-This is just a collection of creative coding bits and pieces for learning Rust. Using the neat [nannou](https://nannou.cc) framework as it's reminiscent of [OpenFrameworks](https://openframeworks.cc) and [P5](https://p5js.org).
+This is just a collection of creative coding bits and pieces for learning Rust and being creative in a **cough** ~~nicer programming language than C++,Java,JS~~. Using the neat [nannou](https://nannou.cc) framework as it's reminiscent of [OpenFrameworks](https://openframeworks.cc) and [P5](https://p5js.org). These are in no way good code or good rust standards.. just playing around :)
 
 ## Each cargo workspace is a separate showcase / example
 
