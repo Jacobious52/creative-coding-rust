@@ -65,10 +65,9 @@ fn model(app: &App) -> Model {
         .usage(wgpu::TextureUsage::COPY_DST | wgpu::TextureUsage::SAMPLED)
         .build(window.swap_chain_device());
 
+    // use a 1d array indexed by 2 dimentions to reduce cache misses (or something idk) when jumping around the cols in the sim
     let world_size_1d = world_size.x + world_size.y * world_size.x;
-
-    let atoms = vec![Atom::Air; world_size.x + world_size.y * world_size.x];
-
+    let atoms = vec![Atom::Air; world_size_1d];
     let dirty = BitVec::from_elem(world_size_1d, false);
 
     Model {
