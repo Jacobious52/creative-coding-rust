@@ -1,6 +1,8 @@
 use nannou::image;
 use nannou::prelude::*;
 
+use bit_vec::BitVec;
+
 fn main() {
     nannou::app(model).update(update).run();
 }
@@ -14,19 +16,35 @@ enum Atom {
 
 struct Model {
     texture: wgpu::Texture,
+    view_dirty: bool,
 
     atoms: Vec<Atom>,
+    dirty: BitVec,
 
     world_size: Vector2<usize>,
 }
 
 impl Model {
+    fn index(x: usize, y: usize, w: usize) -> usize {
+        x + y * w
+    }
+
     fn atom_at(&self, x: usize, y: usize) -> &Atom {
-        &self.atoms[x + y * self.world_size.x]
+        &self.atoms[Model::index(x, y, self.world_size.x)]
     }
 
     fn set_atom(&mut self, atom: Atom, x: usize, y: usize) {
-        self.atoms[x + y * self.world_size.x] = atom;
+        self.atoms[Model::index(x, y, self.world_size.x)] = atom;
+        self.set_dirty(true, x, y);
+    }
+
+    fn is_dirty(&self, x: usize, y: usize) -> bool {
+        self.dirty[Model::index(x, y, self.world_size.x)]
+    }
+
+    fn set_dirty(&mut self, is_dirty: bool, x: usize, y: usize) {
+        self.dirty
+            .set(Model::index(x, y, self.world_size.x), is_dirty);
     }
 }
 
@@ -47,14 +65,18 @@ fn model(app: &App) -> Model {
         .usage(wgpu::TextureUsage::COPY_DST | wgpu::TextureUsage::SAMPLED)
         .build(window.swap_chain_device());
 
+    let world_size_1d = world_size.x + world_size.y * world_size.x;
+
     let atoms = vec![Atom::Air; world_size.x + world_size.y * world_size.x];
 
-    dbg!(&world_size);
+    let dirty = BitVec::from_elem(world_size_1d, false);
 
     Model {
         texture,
         atoms,
         world_size,
+        dirty,
+        view_dirty: false,
     }
 }
 
@@ -69,20 +91,33 @@ fn inside_world(model: &Model, x: i32, y: i32, dx: i32, dy: i32) -> Option<(usiz
     }
 }
 
-fn check_next_positions(model: &Model, x: i32, y: i32, steps: &[(i32, i32)]) -> Vec<(usize, usize)> {
+fn check_next_positions(
+    model: &Model,
+    x: i32,
+    y: i32,
+    steps: &[(i32, i32)],
+) -> Vec<(usize, usize)> {
     steps
         .iter()
         .filter_map(|(dx, dy)| inside_world(&model, x, y, *dx, *dy))
         .collect()
 }
 
-fn try_move(model: &mut Model, atom: &Atom, x: usize, y: usize, spots: &[(usize, usize)], rand: u128) -> bool {
+fn try_move(
+    model: &mut Model,
+    atom: &Atom,
+    x: usize,
+    y: usize,
+    spots: &[(usize, usize)],
+    rand: u128,
+) -> bool {
     let spots_ordered = if rand % 2 == 0 {
         spots.iter().rev().collect::<Vec<_>>()
     } else {
         spots.iter().collect()
     };
 
+    model.set_dirty(false, x, y);
     for (nx, ny) in spots_ordered {
         if *model.atom_at(*nx, *ny) == Atom::Air {
             model.set_atom(atom.clone(), *nx, *ny);
@@ -98,36 +133,45 @@ fn try_move(model: &mut Model, atom: &Atom, x: usize, y: usize, spots: &[(usize,
     false
 }
 
-fn try_moves(mut model: &mut Model, atom: &Atom, x: usize, y: usize, spots_set: &[Vec<(usize, usize)>], rand: u128) {
+fn try_moves(
+    mut model: &mut Model,
+    atom: &Atom,
+    x: usize,
+    y: usize,
+    spots_set: &[Vec<(usize, usize)>],
+    rand: u128,
+) {
     for spots in spots_set {
-        if try_move(&mut model, &atom, x, y, &spots, rand) { return; }
+        if try_move(&mut model, &atom, x, y, &spots, rand) {
+            return;
+        }
     }
 }
 
-fn update(app: &App, mut model: &mut Model, update: Update) {
-
+fn update(app: &App, mut model: &mut Model, _update: Update) {
     // consts
     model.set_atom(Atom::Sand, model.world_size.x / 2, model.world_size.y / 2);
     model.set_atom(Atom::Water, model.world_size.x / 2 + 20, 20);
     model.set_atom(Atom::Water, model.world_size.x / 2 - 20, 20);
 
+    model.view_dirty = app.keys.mods.ctrl();
 
     // drawing
     let m_pos = app.mouse.position();
-        let world_pos_x = map_range(
-            m_pos.x,
-            app.window_rect().left(),
-            app.window_rect().right(),
-            0,
-            model.world_size.x,
-        );
-        let world_pos_y = map_range(
-            m_pos.y,
-            app.window_rect().top(),
-            app.window_rect().bottom(),
-            0,
-            model.world_size.y,
-        );
+    let world_pos_x = map_range(
+        clamp(m_pos.x, app.window_rect().left(), app.window_rect().right() - 1.0),
+        app.window_rect().left(),
+        app.window_rect().right(),
+        0,
+        model.world_size.x,
+    );
+    let world_pos_y = map_range(
+        clamp(m_pos.y, app.window_rect().top(), app.window_rect().bottom()),
+        app.window_rect().top(),
+        app.window_rect().bottom(),
+        0,
+        model.world_size.y,
+    );
 
     if app.mouse.buttons.left().is_down() {
         if let Some((nx, ny)) = inside_world(model, world_pos_x as i32, world_pos_y as i32, 0, 0) {
@@ -149,19 +193,27 @@ fn update(app: &App, mut model: &mut Model, update: Update) {
     // sim every pixel top to bottom (reverse direction of gravity)
     for y in (0..model.world_size.y).rev() {
         for x in 0..model.world_size.x {
+            if !model.is_dirty(x, y) {
+                continue;
+            }
+
             let current = model.atom_at(x, y);
-            
+
             let move_set = match current {
-                Atom::Air => continue,
+                Atom::Air => {
+                    model.set_dirty(false, x, y);
+                    continue;
+                }
                 Atom::Sand => &sand,
                 Atom::Water => &water,
             };
 
             let xy = (x as i32, y as i32);
 
-            let spots_sets: Vec<_> = move_set.iter().map(|steps| {
-                check_next_positions(&model, xy.0, xy.1, &steps)
-            }).collect();
+            let spots_sets: Vec<_> = move_set
+                .iter()
+                .map(|steps| check_next_positions(&model, xy.0, xy.1, &steps))
+                .collect();
 
             let atom = current.clone();
             try_moves(&mut model, &atom, x, y, &spots_sets, random());
@@ -181,6 +233,15 @@ fn view(app: &App, model: &Model, frame: Frame) {
             let px = x as usize;
             let py = y as usize;
 
+            if model.view_dirty {
+                let dirty = model.is_dirty(px, py);
+                if dirty {
+                    return nannou::image::Rgba([std::u16::MAX, 0, 0, std::u16::MAX]);
+                }
+
+                return nannou::image::Rgba([0, 0, 0, std::u16::MAX]);
+            }
+
             let atom = model.atom_at(px, py);
 
             match atom {
@@ -191,12 +252,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
                     std::u16::MAX,
                     std::u16::MAX,
                 ]),
-                Atom::Water =>  nannou::image::Rgba([
-                    0,
-                    0,
-                    std::u16::MAX,
-                    std::u16::MAX,
-                ])
+                Atom::Water => nannou::image::Rgba([0, 0, std::u16::MAX, std::u16::MAX]),
             }
         },
     );
