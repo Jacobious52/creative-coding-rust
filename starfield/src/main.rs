@@ -35,7 +35,7 @@ impl Star {
         //dbg!(self);
     }
 
-    fn view(&self, draw_ellipse: bool, bounds: Rect, draw: &app::Draw) {
+    fn view(&self, draw_ellipse: bool, bounds: Rect, draw: &Draw) {
         let x = map_range(self.pos.x / self.pos.z, 0.0, 1.0, 0.0, bounds.w());
         let y = map_range(self.pos.y / self.pos.z, 0.0, 1.0, 0.0, bounds.h());
         let radius = map_range(self.pos.z, 0.0, bounds.w(), STAR_SIZE, 0.0);
@@ -74,11 +74,11 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     model.stars.iter_mut().for_each(|s| s.update(speed, bounds));
 }
 
-fn view(app: &App, model: &Model, frame: &Frame) {
+fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
     draw.background().color(BLACK);
     model.stars.iter().for_each(|s| s.view(app.mouse.buttons.right().is_down(), app.window_rect(), &draw));
-    draw.to_frame(app, frame).unwrap();
+    draw.to_frame(app, &frame).unwrap();
 }
 
 fn main() {

@@ -18,7 +18,7 @@ fn update(_app: &App, model: &mut Model, _update: Update) {
     model.t += 0.01;
 }
 
-fn view(app: &App, model: &Model, frame: &Frame) {
+fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
     let bounds = app.window_rect();
     
@@ -54,7 +54,7 @@ fn view(app: &App, model: &Model, frame: &Frame) {
         py = fy;
     }
 
-    draw.to_frame(app, frame).unwrap();
+    draw.to_frame(app, &frame).unwrap();
 }
 
 fn main() {

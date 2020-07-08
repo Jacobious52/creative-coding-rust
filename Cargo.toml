@@ -3,4 +3,5 @@
 members = [
     "starfield",
     "water",
+    "falling_pixels"
 ]
