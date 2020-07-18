@@ -22,6 +22,8 @@ struct Model {
     dirty: BitVec,
 
     world_size: Vector2<usize>,
+
+    tick_count: u8,
 }
 
 impl Model {
@@ -52,6 +54,7 @@ fn model(app: &App) -> Model {
     let _window = app.new_window().view(view).build().unwrap();
 
     let window = app.main_window();
+    window.set_fullscreen(true);
     let win = window.rect();
 
     let world_size = Vector2 {
@@ -76,6 +79,7 @@ fn model(app: &App) -> Model {
         world_size,
         dirty,
         view_dirty: false,
+        tick_count: 0,
     }
 }
 
@@ -107,17 +111,10 @@ fn try_move(
     atom: &Atom,
     x: usize,
     y: usize,
-    spots: &[(usize, usize)],
-    rand: u128,
+    spots: &[(usize, usize)]
 ) -> bool {
-    let spots_ordered = if rand % 2 == 0 {
-        spots.iter().rev().collect::<Vec<_>>()
-    } else {
-        spots.iter().collect()
-    };
-
     model.set_dirty(false, x, y);
-    for (nx, ny) in spots_ordered {
+    for (nx, ny) in spots {
         if *model.atom_at(*nx, *ny) == Atom::Air {
             model.set_atom(atom.clone(), *nx, *ny);
             model.set_atom(Atom::Air, x, y);
@@ -137,11 +134,10 @@ fn try_moves(
     atom: &Atom,
     x: usize,
     y: usize,
-    spots_set: &[Vec<(usize, usize)>],
-    rand: u128,
+    spots_set: &[Vec<(usize, usize)>]
 ) {
     for spots in spots_set {
-        if try_move(&mut model, &atom, x, y, &spots, rand) {
+        if try_move(&mut model, &atom, x, y, &spots) {
             return;
         }
     }
@@ -158,7 +154,11 @@ fn update(app: &App, mut model: &mut Model, _update: Update) {
     // drawing
     let m_pos = app.mouse.position();
     let world_pos_x = map_range(
-        clamp(m_pos.x, app.window_rect().left(), app.window_rect().right() - 1.0),
+        clamp(
+            m_pos.x,
+            app.window_rect().left(),
+            app.window_rect().right() - 1.0,
+        ),
         app.window_rect().left(),
         app.window_rect().right(),
         0,
@@ -187,11 +187,17 @@ fn update(app: &App, mut model: &mut Model, _update: Update) {
     let across = vec![(-1i32, 0i32), (1i32, 0i32)];
 
     let sand = vec![&down, &diag];
-    let water = vec![&down, &diag, &across];
+    let water = vec![&down, &across, &diag];
 
     // sim every pixel top to bottom (reverse direction of gravity)
     for y in (0..model.world_size.y).rev() {
         for x in 0..model.world_size.x {
+            let x = if model.tick_count % 2 == 0 {
+                model.world_size.x - x
+            } else {
+                x
+            };
+
             if !model.is_dirty(x, y) {
                 continue;
             }
@@ -215,9 +221,11 @@ fn update(app: &App, mut model: &mut Model, _update: Update) {
                 .collect();
 
             let atom = current.clone();
-            try_moves(&mut model, &atom, x, y, &spots_sets, random());
+            try_moves(&mut model, &atom, x, y, &spots_sets);
         }
     }
+
+    model.tick_count = model.tick_count.wrapping_add(1);
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {
